@@ -12,8 +12,10 @@ mp_face_mesh = mp.solutions.face_mesh
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
+print("Before face mesh init")
 face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+print("after face mesh init")
 
 ### filter placements ###
 
@@ -142,9 +144,11 @@ def overlay_transparent(background, overlay, x, y, w=None, h=None):
     background[y:y+h, x:x+w] = cv2.add(img1_bg, img2_fg)
     return background
 
-
 # primary camera was "0" --> start webcam
 cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("Camera failed to open")
+    exit()
 
 while True:
     ret, frame = cap.read()
