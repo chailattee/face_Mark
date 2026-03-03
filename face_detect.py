@@ -15,13 +15,104 @@ mp_drawing = mp.solutions.drawing_utils
 face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
 
+### filter placements ###
+
+# hat placement
+def place_hat(frame, landmarks, img, w, h):
+    left_eye = landmarks.landmark[33]  # Left eye landmark
+    right_eye = landmarks.landmark[263]  # Right eye landmark
+    forehead = landmarks.landmark[10]  # Forehead landmark
+
+    eye_width = abs(right_eye.x - left_eye.x) * w
+
+    fx = int(forehead.x * w)
+    fy = int(forehead.y * h) 
+
+    hat_width = int(eye_width * 2.5)
+    hat_height = int(hat_width * 0.9)
+
+    return overlay_transparent(
+        frame, 
+        img, 
+        fx - hat_width // 2, 
+        fy - hat_height, 
+        hat_width, 
+        hat_height)
+
+# cheeks placement
+def place_cheeks(frame, landmarks, img, w, h):
+    # Nose tip
+    nose = landmarks.landmark[1]
+    
+    # Eye distance for scaling
+    left_eye = landmarks.landmark[33]
+    right_eye = landmarks.landmark[263]
+    face_width = abs((right_eye.x - left_eye.x) * w)
+
+    size = int(face_width * 1.2)  # scale multiplier
+
+    cx = int(nose.x * w)
+    cy = int(nose.y * h)
+
+    # Shift slightly downward from nose
+    cy += int(size * 0.2)
+
+    return overlay_transparent(
+        frame,
+        img,
+        cx - size // 2,
+        cy - size // 2,
+        size,
+        size
+    )
+
+# glasses placement
+def place_glasses(frame, landmarks, img, w, h):
+    left = landmarks.landmark[33]
+    right = landmarks.landmark[263]
+
+    x1 = int(left.x * w)
+    y1 = int(left.y * h)
+    x2 = int(right.x * w)
+
+    width = abs(x2 - x1)
+    height = int(width * 0.5)
+
+    return overlay_transparent(
+        frame,
+        img,
+        x1,
+        y1 - height // 2,
+        width,
+        height
+    )
+
+
 # face filters
+
 filters = [
-    cv2.imread("bday_hat.png", cv2.IMREAD_UNCHANGED),  # RGBA images with transparency
-    cv2.imread("bike.png", cv2.IMREAD_UNCHANGED),
-    cv2.imread("chef_hat.png", cv2.IMREAD_UNCHANGED),
-    cv2.imread("pats_eyes.png", cv2.IMREAD_UNCHANGED),
+    {
+        "name": "bday_hat",
+        "image": cv2.imread("bday_hat.png", cv2.IMREAD_UNCHANGED),
+        "placement": place_hat
+    },
+    {
+        "name": "pats_eyes",
+        "image": cv2.imread("pats_eyes.png", cv2.IMREAD_UNCHANGED),
+        "placement": place_cheeks
+    },
+    {
+        "name": "bike",
+        "image": cv2.imread("bike.png", cv2.IMREAD_UNCHANGED),
+        "placement": place_glasses
+    },
+    {
+        "name": "chef_hat",
+        "image": cv2.imread("chef_hat.png", cv2.IMREAD_UNCHANGED),
+        "placement": place_hat
+    }
 ]
+
 current_filter = 0
 
 # Hand swipe variables
@@ -39,6 +130,11 @@ def overlay_transparent(background, overlay, x, y, w=None, h=None):
     overlay_color = cv2.merge((b, g, r)) 
     mask = cv2.merge((a, a, a))
     h, w, _ = overlay_color.shape
+
+    # Prevent crash if filter goes off screen
+    if y < 0 or x < 0 or y+h > background.shape[0] or x+w > background.shape[1]:
+        return background
+    
     roi = background[y:y+h, x:x+w]
 
     img1_bg = cv2.bitwise_and(roi, cv2.bitwise_not(mask))
@@ -63,7 +159,31 @@ while True:
     # if face detected, apply filter
     if face_results.multi_face_landmarks:
         for face_landmarks in face_results.multi_face_landmarks:
-            #EDIT FOR PLACEMENT OF DIFFERENT FILTERS
+            h, w, _ = frame.shape
+
+            selected_filter = filters[current_filter]
+
+            nose = face_landmarks.landmark[1]
+            left_eye = face_landmarks.landmark[33]
+            right_eye = face_landmarks.landmark[263]
+
+            face_width = abs((right_eye.x - left_eye.x) * w)
+
+            size = int(face_width * 1.2)
+
+            cx = int(nose.x * w)
+            cy = int(nose.y * h)
+
+            cy += int(size * 0.2)  # adjust vertical position
+
+            frame = overlay_transparent(
+                frame,
+                selected_filter,
+                cx - size // 2,
+                cy - size // 2,
+                size,
+                size
+            )
 
             # overlay current filter on detected face region
             # filter_img = filters[current_filter]
@@ -90,7 +210,6 @@ while True:
     # display the resulting frame
     cv2.imshow('Face Filter', frame)
 
-    cv2.imshow("Face Filter App", frame)
     key = cv2.waitKey(1) & 0xFF
     if key == ord(' '):
         cv2.imwrite(f"snapshot_{int(time.time())}.png", frame)
