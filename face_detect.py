@@ -24,14 +24,21 @@ def overlay_transparent(background, overlay, x, y, w=None, h=None):
     if h is None:
         h = h_o
 
-        # Prevent crash if filter goes off screen
-    if y < 0 or x < 0 or y+h > background.shape[0] or x+w > background.shape[1]:
+    # Clip to visible region (allow partial overlays off-screen)
+    x1, y1 = max(0, x), max(0, y)
+    x2, y2 = min(x + w, w_b), min(y + h, h_b)
+    
+    # Prevent processing if completely off-screen
+    if x2 <= x1 or y2 <= y1:
         return background
     
-    x1, y1 = max(0, x), max(0, y)
-    x2, y2 = min(x + w_o, w_b), min(y + h_o, h_b)
+    # Calculate corresponding region in the overlay
+    overlay_x1 = max(0, -x)
+    overlay_y1 = max(0, -y)
+    overlay_x2 = overlay_x1 + (x2 - x1)
+    overlay_y2 = overlay_y1 + (y2 - y1)
     
-    overlay_crop = overlay[0:(y2 - y1), 0:(x2 - x1)]
+    overlay_crop = overlay[overlay_y1:overlay_y2, overlay_x1:overlay_x2]
     if overlay_crop.shape[0] == 0 or overlay_crop.shape[1] == 0:
         return background
 
@@ -165,14 +172,12 @@ for f in filters:
     
     print(f["name"], f["image"] is None, f["image"].shape if f["image"] is not None else None)
 
-current_filter = 3 # 0 = bday hat, 1 = pats eyes, 2 = bike, 3 = chef hat
+current_filter = 0  # 0 = bday hat, 1 = pats eyes, 2 = bike, 3 = chef hat
 prev_wrist_x = None
 swipe_cooldown = 0.5
 last_swipe_time = 0
 
-# -------------------------------
 # Mediapipe initialization
-# -------------------------------
 mp_face_mesh = mp.solutions.face_mesh
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
@@ -189,9 +194,20 @@ if not cap.isOpened():
     exit()
 print("[DEBUG] Camera initialized successfully")
 
+# Set camera resolution to reduce processing load
+#cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+#cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to avoid stale frames
+
+# Create window once
+cv2.namedWindow("Face Filter", cv2.WINDOW_NORMAL)
+cv2.resizeWindow("Face Filter", 640, 480)
+
 frame_count = 0
 face_results = None
 hand_results = None
+last_time = time.time()
+fps_limit = 30  # Cap at 30 FPS to reduce CPU load
 
 while True:
     ret, frame = cap.read()
@@ -199,14 +215,20 @@ while True:
         print("[ERROR] Can't receive frame (stream end?). Exiting ...")
         break
 
+    # Frame rate limiting to prevent CPU overload
+    current_time = time.time()
+    if (current_time - last_time) < (1.0 / fps_limit):
+        continue
+    last_time = current_time
+
     frame_count += 1
 
     if frame_count % 30 == 0:
         print(f"[DEBUG] Processing frame #{frame_count}")
 
-    if frame_count % 2 == 0:
-        face_results = face_mesh.process(frame)
-        hand_results = hands.process(frame)
+    # Process face and hand detection every frame (not every other)
+    face_results = face_mesh.process(frame)
+    hand_results = hands.process(frame)
 
     h, w, _ = frame.shape
 
@@ -237,16 +259,17 @@ while True:
         now = time.time()
         for hand_landmarks in hand_results.multi_hand_landmarks:
             wrist_x = hand_landmarks.landmark[0].x
-            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            # Disable hand drawing to improve performance
+            # mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             
             if prev_wrist_x is not None and (now - last_swipe_time) > swipe_cooldown:
                 diff = wrist_x - prev_wrist_x
                 #print(f"[DEBUG] Swipe detected - diff: {diff:.3f}, prev_x: {prev_wrist_x:.3f}, curr_x: {wrist_x:.3f}")
-                if diff > 0.2:
+                if diff > 0.1:
                     current_filter = (current_filter + 1) % len(filters)
                     last_swipe_time = now
                     print(f"[DEBUG] Swiped right → changed filter to: {filters[current_filter]['name']}")
-                elif diff < -0.2:
+                elif diff < -0.1:
                     current_filter = (current_filter - 1) % len(filters)
                     last_swipe_time = now
                     print(f"[DEBUG] Swiped left → changed filter to: {filters[current_filter]['name']}")
@@ -254,7 +277,7 @@ while True:
             prev_wrist_x = wrist_x
 
     # Display current filter name
-    cv2.imshow("Filter: " + filters[current_filter]["name"], frame)
+    cv2.imshow("Face Filter", frame)
     key = cv2.waitKey(1) & 0xFF
 
     if key == 27:  # ESC key
