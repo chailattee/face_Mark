@@ -1,0 +1,25 @@
+# Virtual environment
+.venv/
+.venv310/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files (optional)
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Streamlit
+*.db
+*.sqlite
