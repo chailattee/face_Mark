@@ -1,11 +1,41 @@
+
 import cv2
 import numpy as np
-import os
 import time
 
 import mediapipe as mp
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer
+from pathlib import Path
+
+# overlay PNG function
+def overlay_transparent(background, overlay, x, y, w=None, h=None):
+    if overlay is None: 
+        return background
+    if w is not None and h is not None:
+        overlay = cv2.resize(overlay, (w, h))
+
+    b, g, r, a = cv2.split(overlay)
+    overlay_color = cv2.merge((b, g, r)) 
+    mask = cv2.merge((a, a, a))
+
+    h_o, w_o, _ = overlay_color.shape
+    h_b, w_b, _ = background.shape
+
+    # Prevent crash if filter goes off screen
+    if y < 0 or x < 0 or y+h > background.shape[0] or x+w > background.shape[1]:
+        return background
+    x1, y1 = max(0, x), max(0, y)
+    x2, y2 = min(x + w_o, w_b), min(y + h_o, h_b)
+
+    overlay_crop = overlay_color[y1 - y:y2 - y, x1 - x:x2 - x]
+    mask_crop = mask[y1 - y:y2 - y, x1 - x:x2 - x]
+
+    roi = background[y1:y2, x1:x2]
+    img1_bg = cv2.bitwise_and(roi, cv2.bitwise_not(mask_crop))
+    img2_fg = cv2.bitwise_and(overlay_crop, mask_crop)
+    background[y1:y2, x1:x2] = cv2.add(img1_bg, img2_fg)
+    return background
 
 # initialize mediapipe
 mp_face_mesh = mp.solutions.face_mesh
@@ -56,9 +86,6 @@ def place_cheeks(frame, landmarks, img, w, h):
     cx = int(nose.x * w)
     cy = int(nose.y * h)
 
-    # Shift slightly downward from nose
-    cy += int(size * 0.2)
-
     return overlay_transparent(
         frame,
         img,
@@ -89,30 +116,19 @@ def place_glasses(frame, landmarks, img, w, h):
         height
     )
 
+# Map placement type to function
+PLACEMENT_FUNCS = {
+    "hat": place_hat,
+    "cheeks": place_cheeks,
+    "glasses": place_glasses
+}
 
-# face filters
-
+ASSETS_DIR = Path(__file__).parent / "assets"
 filters = [
-    {
-        "name": "bday_hat",
-        "image": cv2.imread("bday_hat.png", cv2.IMREAD_UNCHANGED),
-        "placement": place_hat
-    },
-    {
-        "name": "pats_eyes",
-        "image": cv2.imread("pats_eyes.png", cv2.IMREAD_UNCHANGED),
-        "placement": place_cheeks
-    },
-    {
-        "name": "bike",
-        "image": cv2.imread("bike.png", cv2.IMREAD_UNCHANGED),
-        "placement": place_glasses
-    },
-    {
-        "name": "chef_hat",
-        "image": cv2.imread("chef_hat.png", cv2.IMREAD_UNCHANGED),
-        "placement": place_hat
-    }
+    {"name": "bday_hat", "image": cv2.imread(str(ASSETS_DIR / "bday_hat.png"), cv2.IMREAD_UNCHANGED), "placement": "hat"},
+    {"name": "pats_eyes", "image": cv2.imread(str(ASSETS_DIR / "pats_eyes.png"), cv2.IMREAD_UNCHANGED), "placement": "cheeks"},
+    {"name": "bike", "image": cv2.imread(str(ASSETS_DIR / "bike.png"), cv2.IMREAD_UNCHANGED), "placement": "glasses"},
+    {"name": "chef_hat", "image": cv2.imread(str(ASSETS_DIR / "chef_hat.png"), cv2.IMREAD_UNCHANGED), "placement": "hat"},
 ]
 
 current_filter = 0
@@ -122,27 +138,6 @@ current_filter = 0
 prev_wrist_x = None
 swipe_cooldown = 0.5  # seconds
 last_swipe_time = 0
-
-# overlay PNG function
-def overlay_transparent(background, overlay, x, y, w=None, h=None):
-    if w is not None and h is not None:
-        overlay = cv2.resize(overlay, (w, h))
-
-    b, g, r, a = cv2.split(overlay)
-    overlay_color = cv2.merge((b, g, r)) 
-    mask = cv2.merge((a, a, a))
-    h, w, _ = overlay_color.shape
-
-    # Prevent crash if filter goes off screen
-    if y < 0 or x < 0 or y+h > background.shape[0] or x+w > background.shape[1]:
-        return background
-    
-    roi = background[y:y+h, x:x+w]
-
-    img1_bg = cv2.bitwise_and(roi, cv2.bitwise_not(mask))
-    img2_fg = cv2.bitwise_and(overlay_color, mask)
-    background[y:y+h, x:x+w] = cv2.add(img1_bg, img2_fg)
-    return background
 
 # primary camera was "0" --> start webcam
 cap = cv2.VideoCapture(0)
@@ -180,14 +175,7 @@ while True:
 
             cy += int(size * 0.2)  # adjust vertical position
 
-            frame = overlay_transparent(
-                frame,
-                selected_filter,
-                cx - size // 2,
-                cy - size // 2,
-                size,
-                size
-            )
+            frame = selected_filter["placement"](frame, face_landmarks, selected_filter["image"], w, h)
 
             # overlay current filter on detected face region
             # filter_img = filters[current_filter]
