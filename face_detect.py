@@ -164,6 +164,12 @@ while True:
     face_results = face_mesh.process(frame_rgb)
     h, w, _ = frame.shape
 
+    # display instructions
+    if frame_count < 120:
+        instructions = "wave your hand left/right to change filter, press space bar to take a picture!"
+        cv2.putText(frame, instructions, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        esc_instructions = "press escape to exit"
+        cv2.putText(frame, esc_instructions, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     # Face detection
     if face_results and face_results.multi_face_landmarks:
