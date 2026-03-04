@@ -2,8 +2,6 @@ import cv2
 import numpy as np
 import time
 from pathlib import Path
-import streamlit as st
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 import mediapipe as mp
 
@@ -37,13 +35,6 @@ def overlay_transparent(background, overlay, x, y, w=None, h=None):
     img2_fg = cv2.bitwise_and(overlay_crop, mask_crop)
     background[y1:y2, x1:x2] = cv2.add(img1_bg, img2_fg)
     return background
-
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-
-print("Before face mesh init")
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
-print("after face mesh init")
 
 ### filter placements ###
 
@@ -102,7 +93,7 @@ def place_glasses(frame, landmarks, img, w, h):
     y1 = int(left.y * h)
     x2 = int(right.x * w)
 
-    width = int(abs(x2 - x1) * 1.3)       # scale width
+    width = int(abs(x2 - x1) * 1.9)       # scale width
     height = int(width * 0.5)               # maintain aspect ratio
 
     return overlay_transparent(
@@ -122,78 +113,106 @@ PLACEMENT_FUNCS = {
 }
 
 ASSETS_DIR = Path(__file__).parent / "assets"
+print(f"[DEBUG] Assets directory: {ASSETS_DIR}")
 filters = [
     {"name": "bday_hat", "image": cv2.imread(str(ASSETS_DIR / "bday_hat.png"), cv2.IMREAD_UNCHANGED), "placement": "hat"},
     {"name": "pats_eyes", "image": cv2.imread(str(ASSETS_DIR / "pats_eyes.png"), cv2.IMREAD_UNCHANGED), "placement": "cheeks"},
     {"name": "bike", "image": cv2.imread(str(ASSETS_DIR / "bike.png"), cv2.IMREAD_UNCHANGED), "placement": "glasses"},
     {"name": "chef_hat", "image": cv2.imread(str(ASSETS_DIR / "chef_hat.png"), cv2.IMREAD_UNCHANGED), "placement": "hat"},
 ]
+print(f"[DEBUG] Loaded {len(filters)} filters")
+for i, f in enumerate(filters):
+    print(f"[DEBUG] Filter {i}: {f['name']} (placement: {f['placement']}, image loaded: {f['image'] is not None})")
 
-class FaceFilterTransformer(VideoTransformerBase):
-    def __init__(self):
-
-        self.mp_face_mesh= mp.solutions.face_mesh
-        self.mp_hands = mp.solutions.hands
-        self.mp_drawing = mp.solutions.drawing_utils
-
-        self.face_mesh = self.mp_face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.3,
-            min_tracking_confidence=0.5
-        )
-
-        self.hands = self.mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
-
-        self.current_filter = 0
-        self.prev_wrist_x = None
-        self.swipe_cooldown = 0.5
-        self.last_swipe_time = 0
-
-    def transform(self, frame):
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, _ = frame.shape
-
-        # Face detection
-        face_results = self.face_mesh.process(frame_rgb)
-        if face_results.multi_face_landmarks:
-            for face_landmarks in face_results.multi_face_landmarks:
-                f = filters[self.current_filter]
-                func = PLACEMENT_FUNCS.get(f["placement"])
-                if func:
-                    frame = func(frame, face_landmarks, f["image"], w, h)
-
-        # Hand swipe detection
-        hand_results = self.hands.process(frame_rgb)
-        if hand_results.multi_hand_landmarks:
-            now = time.time()
-            for hand_landmarks in hand_results.multi_hand_landmarks:
-                wrist_x = hand_landmarks.landmark[0].x
-                self.mp_drawing.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
-
-                if self.prev_wrist_x is not None and (now - self.last_swipe_time) > self.swipe_cooldown:
-                    diff = wrist_x - self.prev_wrist_x
-                    if diff > 0.2:
-                        self.current_filter = (self.current_filter + 1) % len(filters)
-                        self.last_swipe_time = now
-                    elif diff < -0.2:
-                        self.current_filter = (self.current_filter - 1) % len(filters)
-                        self.last_swipe_time = now
-
-                self.prev_wrist_x = wrist_x
-
-        return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+current_filter = 0
+prev_wrist_x = None
+swipe_cooldown = 0.5
+last_swipe_time = 0
 
 # -------------------------------
-# Streamlit App
+# Mediapipe initialization
 # -------------------------------
-st.title("🎭 AR Face Filters")
+mp_face_mesh = mp.solutions.face_mesh
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
 
-webrtc_streamer(
-    key="face-filter",
-    video_transformer_factory=FaceFilterTransformer,
-    media_stream_constraints={"video": True, "audio": False},
-    async_transform=True
+face_mesh = mp_face_mesh.FaceMesh(
+    max_num_faces=1, refine_landmarks=True,
+    min_detection_confidence=0.5, min_tracking_confidence=0.5
 )
+hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
 
-st.info("Swipe your hand left/right to change filters!")
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("[ERROR] Cannot open camera")
+    exit()
+print("[DEBUG] Camera initialized successfully")
+
+frame_count = 0
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        print("[ERROR] Can't receive frame (stream end?). Exiting ...")
+        break
+
+    frame_count += 1
+    if frame_count % 30 == 0:
+        print(f"[DEBUG] Processing frame #{frame_count}")
+    
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    face_results = face_mesh.process(frame_rgb)
+    h, w, _ = frame.shape
+
+
+    # Face detection
+    if face_results and face_results.multi_face_landmarks:
+        print(f"[DEBUG] Detected {len(face_results.multi_face_landmarks)} face(s)")
+        for face_landmarks in face_results.multi_face_landmarks:
+
+            f = filters[current_filter]
+            func = PLACEMENT_FUNCS.get(f["placement"])
+            if func:
+                print(f"[DEBUG] Applying filter: {f['name']} (placement: {f['placement']})")
+                frame = func(frame, face_landmarks, f["image"], w, h)
+    else:
+        if frame_count % 30 == 0:
+            print("[DEBUG] No face detected in frame")
+
+    # Hand swipe detection
+    hand_results = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    if hand_results.multi_hand_landmarks:
+        print(f"[DEBUG] Hand(s) detected: {len(hand_results.multi_hand_landmarks)}")
+        now = time.time()
+        for hand_landmarks in hand_results.multi_hand_landmarks:
+            wrist_x = hand_landmarks.landmark[0].x
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            
+            if prev_wrist_x is not None and (now - last_swipe_time) > swipe_cooldown:
+                diff = wrist_x - prev_wrist_x
+                print(f"[DEBUG] Swipe detected - diff: {diff:.3f}, prev_x: {prev_wrist_x:.3f}, curr_x: {wrist_x:.3f}")
+                if diff > 0.2:
+                    current_filter = (current_filter + 1) % len(filters)
+                    last_swipe_time = now
+                    print(f"[DEBUG] Swiped right → changed filter to: {filters[current_filter]['name']}")
+                elif diff < -0.2:
+                    current_filter = (current_filter - 1) % len(filters)
+                    last_swipe_time = now
+                    print(f"[DEBUG] Swiped left → changed filter to: {filters[current_filter]['name']}")
+
+            prev_wrist_x = wrist_x
+
+    # Display current filter name
+    cv2.imshow("Filter: " + filters[current_filter]["name"], frame)
+    key = cv2.waitKey(1) & 0xFF
+
+    if key == 27:  # ESC key
+        print("[DEBUG] ESC key pressed - exiting application")
+        break
+    elif key == ord(' '):
+        filename = f"snapshot_{filters[current_filter]['name']}.png"
+        cv2.imwrite(filename, frame)
+        print(f"[DEBUG] Snapshot saved as {filename}")
+
+cap.release()
+cv2.destroyAllWindows()
