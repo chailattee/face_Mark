@@ -20,6 +20,9 @@ Thumbs.db
 # Logs
 *.log
 
+# App output
+snapshots/
+
 # Streamlit
 *.db
 *.sqlite

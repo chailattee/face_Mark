@@ -64,7 +64,7 @@ def place_hat(frame, landmarks, img, w, h):
     hat_width = int(eye_width * 2.5)
     hat_height = int(hat_width * 0.9)
 
-    print("HAT:", fx, fy, hat_width, hat_height)
+   # print("HAT:", fx, fy, hat_width, hat_height)
 
     return overlay_transparent(
         frame, 
@@ -149,6 +149,8 @@ PLACEMENT_FUNCS = {
 }
 
 ASSETS_DIR = Path(__file__).parent / "assets"
+SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
+SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[DEBUG] Assets directory: {ASSETS_DIR}")
 filters = [
     {"name": "bday_hat", "image": cv2.imread(str(ASSETS_DIR / "bday_hat.png"), cv2.IMREAD_UNCHANGED), "placement": "hat"},
@@ -163,7 +165,7 @@ for f in filters:
     
     print(f["name"], f["image"] is None, f["image"].shape if f["image"] is not None else None)
 
-current_filter = 1
+current_filter = 3 # 0 = bday hat, 1 = pats eyes, 2 = bike, 3 = chef hat
 prev_wrist_x = None
 swipe_cooldown = 0.5
 last_swipe_time = 0
@@ -260,8 +262,9 @@ while True:
         break
     elif key == ord(' '):
         filename = f"snapshot_{filters[current_filter]['name']}.png"
-        cv2.imwrite(filename, frame)
-        print(f"[DEBUG] Snapshot saved as {filename}")
+        output_path = SNAPSHOTS_DIR / filename
+        cv2.imwrite(str(output_path), frame)
+        print(f"[DEBUG] Snapshot saved as {output_path}")
 
 cap.release()
 cv2.destroyAllWindows()
