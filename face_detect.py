@@ -11,35 +11,47 @@ print("Imports complete")
 def overlay_transparent(background, overlay, x, y, w=None, h=None):
     if overlay is None: 
         return background
+
     if w is not None and h is not None:
-        overlay = cv2.resize(overlay, (w, h))
-
-    b, g, r, a = cv2.split(overlay)
-    overlay_color = cv2.merge((b, g, r)) 
-    mask = cv2.merge((a, a, a))
-
-    h_o, w_o, _ = overlay_color.shape
+        overlay = cv2.resize(overlay, (w, h), interpolation=cv2.INTER_AREA)
+    
+    h_o, w_o = overlay.shape[:2]
     h_b, w_b, _ = background.shape
 
-    # Prevent crash if filter goes off screen
+    # Use overlay dimensions if w and h not provided
+    if w is None:
+        w = w_o
+    if h is None:
+        h = h_o
+
+        # Prevent crash if filter goes off screen
     if y < 0 or x < 0 or y+h > background.shape[0] or x+w > background.shape[1]:
         return background
+    
     x1, y1 = max(0, x), max(0, y)
     x2, y2 = min(x + w_o, w_b), min(y + h_o, h_b)
+    
+    overlay_crop = overlay[0:(y2 - y1), 0:(x2 - x1)]
+    if overlay_crop.shape[0] == 0 or overlay_crop.shape[1] == 0:
+        return background
 
-    overlay_crop = overlay_color[y1 - y:y2 - y, x1 - x:x2 - x]
-    mask_crop = mask[y1 - y:y2 - y, x1 - x:x2 - x]
+    if overlay.shape[2] == 4:  # has alpha
+        b, g, r, a = cv2.split(overlay_crop)
+        overlay_color = cv2.merge((b, g, r))
+        mask = cv2.merge((a, a, a))
+        roi = background[y1:y2, x1:x2]
+        background[y1:y2, x1:x2] = cv2.add(cv2.bitwise_and(roi, cv2.bitwise_not(mask)),
+                                            cv2.bitwise_and(overlay_color, mask))
+    else:
+        background[y1:y2, x1:x2] = overlay_crop
 
-    roi = background[y1:y2, x1:x2]
-    img1_bg = cv2.bitwise_and(roi, cv2.bitwise_not(mask_crop))
-    img2_fg = cv2.bitwise_and(overlay_crop, mask_crop)
-    background[y1:y2, x1:x2] = cv2.add(img1_bg, img2_fg)
     return background
 
 ### filter placements ###
 
 # hat placement
 def place_hat(frame, landmarks, img, w, h):
+
     left_eye = landmarks.landmark[33]  # Left eye landmark
     right_eye = landmarks.landmark[263]  # Right eye landmark
     forehead = landmarks.landmark[10]  # Forehead landmark
@@ -52,6 +64,8 @@ def place_hat(frame, landmarks, img, w, h):
     hat_width = int(eye_width * 2.5)
     hat_height = int(hat_width * 0.9)
 
+    print("HAT:", fx, fy, hat_width, hat_height)
+
     return overlay_transparent(
         frame, 
         img, 
@@ -61,48 +75,70 @@ def place_hat(frame, landmarks, img, w, h):
         hat_height)
 
 # cheeks placement
-def place_cheeks(frame, landmarks, img, w, h):
-    # Nose tip
-    nose = landmarks.landmark[1]
-    
-    # Eye distance for scaling
+def place_cheeks(frame, landmarks, img, w, h, scale=1.4, y_offset_ratio=1):
+    # Eye landmarks for center + scaling
     left_eye = landmarks.landmark[33]
     right_eye = landmarks.landmark[263]
-    face_width = abs((right_eye.x - left_eye.x) * w)
+    eye_dist = abs((right_eye.x - left_eye.x) * w)
 
-    size = int(face_width * 1.2)  # scale multiplier
+    # Scale PNG based on eye distance
+    orig_h, orig_w = img.shape[:2]
+    new_w = int(eye_dist * scale)  # width of overlay relative to eyes
+    new_h = int(orig_h * (new_w / orig_w))  # preserve aspect ratio
 
-    cx = int(nose.x * w)
-    cy = int(nose.y * h)
+    # Center between eyes, then move down slightly toward upper cheeks
+    center_x = int(((left_eye.x + right_eye.x) / 2) * w)
+    center_y = int(((left_eye.y + right_eye.y) / 2) * h + (new_h * y_offset_ratio))
 
+    # Top-left for overlay
+    top_left_x = int(center_x - new_w / 2)
+    top_left_y = int(center_y - new_h / 2)
+
+    # Debug prints
+    # print("CHEEKS: top-left", top_left_x, top_left_y, "size:", new_w, new_h)
+
+    # Apply overlay
     return overlay_transparent(
-        frame,
-        img,
-        cx - size // 2,
-        cy - size // 2,
-        size,
-        size
-    )
+        frame, 
+        img, 
+        top_left_x, top_left_y, 
+        new_w, new_h
+        )
 
 # glasses placement
-def place_glasses(frame, landmarks, img, w, h):
+def place_glasses(frame, landmarks, img, w, h, scale=1.6):
+
     left = landmarks.landmark[33]
     right = landmarks.landmark[263]
 
     x1 = int(left.x * w)
     y1 = int(left.y * h)
     x2 = int(right.x * w)
+    y2 = int(right.y * h)
 
-    width = int(abs(x2 - x1) * 1.9)       # scale width
-    height = int(width * 0.5)               # maintain aspect ratio
+    eye_dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+    # Scale PNG based on eye distance
+    orig_h, orig_w = img.shape[:2]
+    new_w = int(eye_dist * scale)
+    new_h = int(orig_h * (new_w / orig_w))  # preserve aspect ratio
+
+    resized_img = cv2.resize(img, (new_w, new_h))
+
+    # Center position
+    center_x = (x1 + x2) // 2
+    center_y = (y1 + y2) // 2
+
+    # Top-left for overlay function
+    top_left_x = int(center_x - new_w / 2)
+    top_left_y = int(center_y - new_h / 2)
+
+    # print("GLASSES:", center_x, center_y, new_w, new_h)
 
     return overlay_transparent(
         frame,
-        img,
-        x1,
-        y1 - height // 2,
-        width,
-        height
+        resized_img,
+        top_left_x, top_left_y
     )
 
 # Map placement type to function
@@ -123,8 +159,11 @@ filters = [
 print(f"[DEBUG] Loaded {len(filters)} filters")
 for i, f in enumerate(filters):
     print(f"[DEBUG] Filter {i}: {f['name']} (placement: {f['placement']}, image loaded: {f['image'] is not None})")
+for f in filters:
+    
+    print(f["name"], f["image"] is None, f["image"].shape if f["image"] is not None else None)
 
-current_filter = 0
+current_filter = 1
 prev_wrist_x = None
 swipe_cooldown = 0.5
 last_swipe_time = 0
@@ -137,7 +176,7 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
 face_mesh = mp_face_mesh.FaceMesh(
-    max_num_faces=1, refine_landmarks=True,
+    max_num_faces=2, refine_landmarks=True,
     min_detection_confidence=0.5, min_tracking_confidence=0.5
 )
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
@@ -149,6 +188,8 @@ if not cap.isOpened():
 print("[DEBUG] Camera initialized successfully")
 
 frame_count = 0
+face_results = None
+hand_results = None
 
 while True:
     ret, frame = cap.read()
@@ -157,38 +198,40 @@ while True:
         break
 
     frame_count += 1
+
     if frame_count % 30 == 0:
         print(f"[DEBUG] Processing frame #{frame_count}")
-    
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    face_results = face_mesh.process(frame_rgb)
+
+    if frame_count % 2 == 0:
+        face_results = face_mesh.process(frame)
+        hand_results = hands.process(frame)
+
     h, w, _ = frame.shape
 
     # display instructions
-    if frame_count < 120:
-        instructions = "wave your hand left/right to change filter, press space bar to take a picture!"
-        cv2.putText(frame, instructions, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        esc_instructions = "press escape to exit"
-        cv2.putText(frame, esc_instructions, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+    instructions = "wave your hand left/right to change filter, press space bar to take a picture!"
+    cv2.putText(frame, instructions, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    esc_instructions = "press escape to exit"
+    cv2.putText(frame, esc_instructions, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     # Face detection
     if face_results and face_results.multi_face_landmarks:
-        print(f"[DEBUG] Detected {len(face_results.multi_face_landmarks)} face(s)")
+        # print(f"[DEBUG] Detected {len(face_results.multi_face_landmarks)} face(s)")
         for face_landmarks in face_results.multi_face_landmarks:
-
+            # mp_drawing.draw_landmarks(frame, face_landmarks, mp_face_mesh.FACEMESH_CONTOURS)
             f = filters[current_filter]
             func = PLACEMENT_FUNCS.get(f["placement"])
             if func:
-                print(f"[DEBUG] Applying filter: {f['name']} (placement: {f['placement']})")
+               # print(f"[DEBUG] Applying filter: {f['name']} (placement: {f['placement']})")
                 frame = func(frame, face_landmarks, f["image"], w, h)
     else:
         if frame_count % 30 == 0:
             print("[DEBUG] No face detected in frame")
 
     # Hand swipe detection
-    hand_results = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    if hand_results.multi_hand_landmarks:
-        print(f"[DEBUG] Hand(s) detected: {len(hand_results.multi_hand_landmarks)}")
+    if hand_results and hand_results.multi_hand_landmarks:
+        #print(f"[DEBUG] Hand(s) detected: {len(hand_results.multi_hand_landmarks)}")
         now = time.time()
         for hand_landmarks in hand_results.multi_hand_landmarks:
             wrist_x = hand_landmarks.landmark[0].x
@@ -196,7 +239,7 @@ while True:
             
             if prev_wrist_x is not None and (now - last_swipe_time) > swipe_cooldown:
                 diff = wrist_x - prev_wrist_x
-                print(f"[DEBUG] Swipe detected - diff: {diff:.3f}, prev_x: {prev_wrist_x:.3f}, curr_x: {wrist_x:.3f}")
+                #print(f"[DEBUG] Swipe detected - diff: {diff:.3f}, prev_x: {prev_wrist_x:.3f}, curr_x: {wrist_x:.3f}")
                 if diff > 0.2:
                     current_filter = (current_filter + 1) % len(filters)
                     last_swipe_time = now
