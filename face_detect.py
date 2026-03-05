@@ -2,6 +2,15 @@ import cv2
 import numpy as np
 import time
 from pathlib import Path
+import sys 
+import os
+
+def resource_path(relative_path):
+    try:
+        base_path = Path(sys._MEIPASS)
+    except Exception:
+        base_path = Path(__file__).parent
+    return base_path / relative_path
 
 import mediapipe as mp
 
@@ -155,9 +164,11 @@ PLACEMENT_FUNCS = {
     "glasses": place_glasses
 }
 
-ASSETS_DIR = Path(__file__).parent / "assets"
-SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
+ASSETS_DIR = resource_path("assets")
+
+SNAPSHOTS_DIR = Path.home() / "Desktop" / "photo_booth_snapshots"
 SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+
 print(f"[DEBUG] Assets directory: {ASSETS_DIR}")
 filters = [
     {"name": "bday_hat", "image": cv2.imread(str(ASSETS_DIR / "bday_hat.png"), cv2.IMREAD_UNCHANGED), "placement": "hat"},

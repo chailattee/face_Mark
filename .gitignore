@@ -20,8 +20,14 @@ Thumbs.db
 # Logs
 *.log
 
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
 # App output
 snapshots/
+photo_booth_snapshots/
 
 # Streamlit
 *.db
