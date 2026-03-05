@@ -172,7 +172,7 @@ for f in filters:
     
     print(f["name"], f["image"] is None, f["image"].shape if f["image"] is not None else None)
 
-current_filter = 0  # 0 = bday hat, 1 = pats eyes, 2 = bike, 3 = chef hat
+current_filters = [0, 0]  # 0 = bday hat, 1 = pats eyes, 2 = bike, 3 = chef hat
 prev_wrist_x = None
 swipe_cooldown = 0.5
 last_swipe_time = 0
@@ -239,16 +239,16 @@ while True:
     esc_instructions = "press escape to exit"
     cv2.putText(frame, esc_instructions, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-    # Face detection
+
+    # apply filters per  detected face
     if face_results and face_results.multi_face_landmarks:
-        # print(f"[DEBUG] Detected {len(face_results.multi_face_landmarks)} face(s)")
-        for face_landmarks in face_results.multi_face_landmarks:
-            # mp_drawing.draw_landmarks(frame, face_landmarks, mp_face_mesh.FACEMESH_CONTOURS)
-            f = filters[current_filter]
+        for i, face_landmarks in enumerate(face_results.multi_face_landmarks):
+            # Use current filter for this face
+            f = filters[current_filters[i]]
             func = PLACEMENT_FUNCS.get(f["placement"])
             if func:
-               # print(f"[DEBUG] Applying filter: {f['name']} (placement: {f['placement']})")
                 frame = func(frame, face_landmarks, f["image"], w, h)
+
     else:
         if frame_count % 30 == 0:
             print("[DEBUG] No face detected in frame")
@@ -266,13 +266,15 @@ while True:
                 diff = wrist_x - prev_wrist_x
                 #print(f"[DEBUG] Swipe detected - diff: {diff:.3f}, prev_x: {prev_wrist_x:.3f}, curr_x: {wrist_x:.3f}")
                 if diff > 0.1:
-                    current_filter = (current_filter + 1) % len(filters)
+                    for j in range(len(current_filters)):
+                        current_filters[j] = (current_filters[j] + 1) % len(filters)
                     last_swipe_time = now
-                    print(f"[DEBUG] Swiped right → changed filter to: {filters[current_filter]['name']}")
+                    print(f"[DEBUG] Swiped right → changed filter to: {filters[current_filters[0]]['name']}")
                 elif diff < -0.1:
-                    current_filter = (current_filter - 1) % len(filters)
+                    for j in range(len(current_filters)):
+                        current_filters[j] = (current_filters[j] - 1) % len(filters)
                     last_swipe_time = now
-                    print(f"[DEBUG] Swiped left → changed filter to: {filters[current_filter]['name']}")
+                    print(f"[DEBUG] Swiped left → changed filter to: {filters[current_filters[0]]['name']}")
 
             prev_wrist_x = wrist_x
 
@@ -284,7 +286,7 @@ while True:
         print("[DEBUG] ESC key pressed - exiting application")
         break
     elif key == ord(' '):
-        filename = f"snapshot_{filters[current_filter]['name']}.png"
+        filename = f"snapshot_{filters[current_filters[0]]['name']}.png"
         output_path = SNAPSHOTS_DIR / filename
         cv2.imwrite(str(output_path), frame)
         print(f"[DEBUG] Snapshot saved as {output_path}")
