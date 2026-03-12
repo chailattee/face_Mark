@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 import sys 
 import os
+import mediapipe as mp
 
 def resource_path(relative_path):
     try:
@@ -12,7 +13,6 @@ def resource_path(relative_path):
         base_path = Path(__file__).parent
     return base_path / relative_path
 
-import mediapipe as mp
 
 print("Imports complete")
 
@@ -243,14 +243,6 @@ while True:
 
     h, w, _ = frame.shape
 
-    # display instructions
-
-    instructions = "wave your hand left/right to change filter, press space bar to take a picture!"
-    cv2.putText(frame, instructions, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    esc_instructions = "press escape to exit"
-    cv2.putText(frame, esc_instructions, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-
     # apply filters per  detected face
     if face_results and face_results.multi_face_landmarks:
         for i, face_landmarks in enumerate(face_results.multi_face_landmarks):
@@ -289,8 +281,15 @@ while True:
 
             prev_wrist_x = wrist_x
 
+    # Draw instructions only on the display frame (not the saved snapshot)
+    display_frame = frame.copy()
+    instructions = "wave your hand left/right to change filter, press space bar to take a picture!"
+    cv2.putText(display_frame, instructions, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    esc_instructions = "press escape to exit"
+    cv2.putText(display_frame, esc_instructions, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
     # Display current filter name
-    cv2.imshow("Face Filter", frame)
+    cv2.imshow("Face Filter", display_frame)
     key = cv2.waitKey(1) & 0xFF
 
     if key == 27:  # ESC key
