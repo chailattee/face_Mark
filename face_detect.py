@@ -5,6 +5,7 @@ from pathlib import Path
 import sys 
 import os
 import mediapipe as mp
+from datetime import datetime
 
 def resource_path(relative_path):
     try:
@@ -169,6 +170,9 @@ ASSETS_DIR = resource_path("assets")
 SNAPSHOTS_DIR = Path.home() / "Desktop" / "photo_booth_snapshots"
 SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
+VIDEOS_DIR = Path.home() / "Desktop" / "photo_booth_videos"
+VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+
 print(f"[DEBUG] Assets directory: {ASSETS_DIR}")
 filters = [
     {"name": "bday_hat", "image": cv2.imread(str(ASSETS_DIR / "bday_hat.png"), cv2.IMREAD_UNCHANGED), "placement": "hat"},
@@ -219,6 +223,9 @@ face_results = None
 hand_results = None
 last_time = time.time()
 fps_limit = 30  # Cap at 30 FPS to reduce CPU load
+video_writer = None
+is_recording = False
+recording_path = None
 
 while True:
     ret, frame = cap.read()
@@ -287,6 +294,15 @@ while True:
     cv2.putText(display_frame, instructions, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     esc_instructions = "press escape to exit"
     cv2.putText(display_frame, esc_instructions, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    video_instructions = "press v to start/stop video recording"
+    cv2.putText(display_frame, video_instructions, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+    if is_recording:
+        cv2.circle(display_frame, (w - 30, 30), 10, (0, 0, 255), -1)
+        cv2.putText(display_frame, "REC", (w - 80, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+    if is_recording and video_writer is not None:
+        video_writer.write(frame)
 
     # Display current filter name
     cv2.imshow("Face Filter", display_frame)
@@ -300,6 +316,31 @@ while True:
         output_path = SNAPSHOTS_DIR / filename
         cv2.imwrite(str(output_path), frame)
         print(f"[DEBUG] Snapshot saved as {output_path}")
+    elif key == ord('v'):
+        if not is_recording:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"video_{filters[current_filters[0]]['name']}_{timestamp}.mp4"
+            recording_path = VIDEOS_DIR / filename
+
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            video_writer = cv2.VideoWriter(str(recording_path), fourcc, fps_limit, (w, h))
+
+            if not video_writer.isOpened():
+                print(f"[ERROR] Failed to start recording at {recording_path}")
+                video_writer = None
+                recording_path = None
+            else:
+                is_recording = True
+                print(f"[DEBUG] Recording started: {recording_path}")
+        else:
+            is_recording = False
+            if video_writer is not None:
+                video_writer.release()
+                video_writer = None
+            print(f"[DEBUG] Recording saved to: {recording_path}")
+            recording_path = None
 
 cap.release()
+if video_writer is not None:
+    video_writer.release()
 cv2.destroyAllWindows()
