@@ -1,5 +1,5 @@
 # face filter app
-skills: openCV, mediapipe hand and face detection, exporting with pyinstaller
+skills: openCV, mediapipe hand and face detection
 
 # instructions: 
 1. download zip from releases file

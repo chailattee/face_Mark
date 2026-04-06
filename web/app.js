@@ -17,10 +17,10 @@ const btnRec = document.getElementById("btn-rec");
 // ── Filter definitions ──────────────────────────────────────────────────────
 
 const FILTER_DEFS = [
-  { name: "bday_hat",   src: "assets/bday_hat.png",  placement: "hat" },
-  { name: "pats_eyes",  src: "assets/pats_eyes.png", placement: "cheeks" },
-  { name: "bike",       src: "assets/bike.png",      placement: "glasses" },
-  { name: "chef_hat",   src: "assets/chef_hat.png",  placement: "hat" },
+  { name: "bday_hat", src: "assets/bday_hat.png", placement: "hat" },
+  { name: "pats_eyes", src: "assets/pats_eyes.png", placement: "cheeks" },
+  { name: "bike", src: "assets/bike.png", placement: "glasses" },
+  { name: "chef_hat", src: "assets/chef_hat.png", placement: "hat" },
 ];
 
 function loadImage(src) {
@@ -32,8 +32,7 @@ function loadImage(src) {
   });
 }
 
-// ── Placement helpers ────────────────────────────────────────────────────────
-// landmarks: array of {x, y, z} in normalised coords (0-1)
+// landmarks: array of {x, y, z} in normalized coords (0-1)
 // mx(lm) mirrors x so the canvas (which is drawn flipped) aligns with overlay
 
 function mx(lm, w) { return (1 - lm.x) * w; }
@@ -41,24 +40,24 @@ function my(lm, h) { return lm.y * h; }
 
 function placeHat(landmarks, img, w, h) {
   if (!img) return;
-  const leftEye  = landmarks[33];
+  const leftEye = landmarks[33];
   const rightEye = landmarks[263];
   const forehead = landmarks[10];
 
-  const eyeWidth  = Math.abs(rightEye.x - leftEye.x) * w;
-  const hatW      = eyeWidth * 2.5;
-  const hatH      = hatW * 0.9;
-  const fx        = mx(forehead, w);
-  const fy        = my(forehead, h);
+  const eyeWidth = Math.abs(rightEye.x - leftEye.x) * w;
+  const hatW = eyeWidth * 2.5;
+  const hatH = hatW * 0.9;
+  const fx = mx(forehead, w);
+  const fy = my(forehead, h);
 
   ctx.drawImage(img, fx - hatW / 2, fy - hatH, hatW, hatH);
 }
 
 function placeCheeks(landmarks, img, w, h) {
   if (!img) return;
-  const leftEye  = landmarks[33];
+  const leftEye = landmarks[33];
   const rightEye = landmarks[263];
-  const eyeDist  = Math.abs(rightEye.x - leftEye.x) * w;
+  const eyeDist = Math.abs(rightEye.x - leftEye.x) * w;
 
   const newW = eyeDist * 1.4;
   const newH = img.height * (newW / img.width);
@@ -72,43 +71,45 @@ function placeCheeks(landmarks, img, w, h) {
 
 function placeGlasses(landmarks, img, w, h) {
   if (!img) return;
-  const left  = landmarks[33];
+  const left = landmarks[33];
   const right = landmarks[263];
 
-  const x1 = mx(left,  w);  const y1 = my(left,  h);
-  const x2 = mx(right, w);  const y2 = my(right, h);
+  const x1 = mx(left, w); const y1 = my(left, h);
+  const x2 = mx(right, w); const y2 = my(right, h);
 
   const eyeDist = Math.hypot(x2 - x1, y2 - y1);
-  const newW    = eyeDist * 1.6;
-  const newH    = img.height * (newW / img.width);
-  const cx      = (x1 + x2) / 2;
-  const cy      = (y1 + y2) / 2;
+  const newW = eyeDist * 1.6;
+  const newH = img.height * (newW / img.width);
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
 
   ctx.drawImage(img, cx - newW / 2, cy - newH / 2, newW, newH);
 }
 
 const PLACE = { hat: placeHat, cheeks: placeCheeks, glasses: placeGlasses };
 
-// ── State ────────────────────────────────────────────────────────────────────
+// state 
 
 let filters = [];
 let currentFilter = 0;
 let faceLandmarker = null;
 let handLandmarker = null;
-let faceResult     = null;
-let handResult     = null;
+let faceResult = null;
+let handResult = null;
 
 // Hand swipe
-let prevWristX    = null;
+let prevWristX = null;
 let lastSwipeTime = 0;
 const SWIPE_COOLDOWN = 500; // ms
 
 // Recording
-let mediaRecorder  = null;
+let mediaRecorder = null;
 let recordedChunks = [];
-let isRecording    = false;
+let isRecording = false;
 
-// ── Init ─────────────────────────────────────────────────────────────────────
+
+
+// init 
 
 async function init() {
   statusEl.textContent = "Loading models...";
@@ -148,21 +149,21 @@ async function init() {
   video.srcObject = stream;
   await video.play();
 
-  // Wait until we have real frame dimensions
+  // Wait until real frame dimensions
   await new Promise((r) => {
     const check = () => (video.videoWidth > 0 ? r() : requestAnimationFrame(check));
     check();
   });
 
-  canvas.width  = video.videoWidth;
+  canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
 
-  statusEl.textContent = "Wave your hand to change filters!";
+  statusEl.textContent = "Wave your hand to change filters";
   updateFilterLabel();
   requestAnimationFrame(loop);
 }
 
-// ── Main loop ────────────────────────────────────────────────────────────────
+// Main loop
 
 function loop() {
   try {
@@ -188,7 +189,7 @@ function loop() {
     // Apply face filters
     if (faceCount > 0) {
       for (const faceLandmarks of faceResult.faceLandmarks) {
-        const f  = filters[currentFilter];
+        const f = filters[currentFilter];
         const fn = PLACE[f.placement];
         if (fn) fn(faceLandmarks, f.image, w, h);
       }
@@ -230,7 +231,7 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-// ── UI helpers ───────────────────────────────────────────────────────────────
+// UI helpers
 
 function updateFilterLabel() {
   filterNameEl.textContent = filters[currentFilter]?.name ?? "";
@@ -239,8 +240,8 @@ function updateFilterLabel() {
 function takeSnapshot() {
   canvas.toBlob((blob) => {
     const url = URL.createObjectURL(blob);
-    const a   = document.createElement("a");
-    a.href     = url;
+    const a = document.createElement("a");
+    a.href = url;
     a.download = `snapshot_${filters[currentFilter].name}.png`;
     a.click();
     URL.revokeObjectURL(url);
@@ -257,9 +258,9 @@ function toggleRecording() {
     };
     mediaRecorder.onstop = () => {
       const blob = new Blob(recordedChunks, { type: "video/webm" });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href     = url;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
       a.download = `video_${filters[currentFilter].name}_${Date.now()}.webm`;
       a.click();
       URL.revokeObjectURL(url);
@@ -276,7 +277,7 @@ function toggleRecording() {
   }
 }
 
-// ── Button & keyboard events ─────────────────────────────────────────────────
+// Button & keyboard events 
 
 btnPrev.addEventListener("click", () => {
   currentFilter = (currentFilter - 1 + filters.length) % filters.length;
@@ -290,14 +291,14 @@ btnSnap.addEventListener("click", takeSnapshot);
 btnRec.addEventListener("click", toggleRecording);
 
 document.addEventListener("keydown", (e) => {
-  if (e.code === "Space")   { e.preventDefault(); takeSnapshot(); }
-  if (e.key  === "v")       { toggleRecording(); }
-  if (e.key  === "Escape")  { /* nothing to close in browser */ }
-  if (e.key  === "ArrowLeft")  { currentFilter = (currentFilter - 1 + filters.length) % filters.length; updateFilterLabel(); }
-  if (e.key  === "ArrowRight") { currentFilter = (currentFilter + 1) % filters.length; updateFilterLabel(); }
+  if (e.code === "Space") { e.preventDefault(); takeSnapshot(); }
+  if (e.key === "v") { toggleRecording(); }
+  if (e.key === "Escape") { /* nothing to close in browser */ }
+  if (e.key === "ArrowLeft") { currentFilter = (currentFilter - 1 + filters.length) % filters.length; updateFilterLabel(); }
+  if (e.key === "ArrowRight") { currentFilter = (currentFilter + 1) % filters.length; updateFilterLabel(); }
 });
 
-// ── Start ────────────────────────────────────────────────────────────────────
+// Start
 
 init().catch((err) => {
   statusEl.textContent = "Error: " + err.message;
