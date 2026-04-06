@@ -183,8 +183,8 @@ function loop() {
     ctx.restore();
 
     // Debug: show face count live
-    const faceCount = faceResult?.faceLandmarks?.length ?? 0;
-    statusEl.textContent = `faces: ${faceCount} | filter: ${filters[currentFilter]?.name} | img: ${filters[currentFilter]?.image ? "ok" : "null"}`;
+    //const faceCount = faceResult?.faceLandmarks?.length ?? 0;
+    //statusEl.textContent = `faces: ${faceCount} | filter: ${filters[currentFilter]?.name} | img: ${filters[currentFilter]?.image ? "ok" : "null"}`;
 
     // Apply face filters
     if (faceCount > 0) {
@@ -268,12 +268,12 @@ function toggleRecording() {
     mediaRecorder.start();
     isRecording = true;
     btnRec.classList.add("active");
-    btnRec.textContent = "⏹ Stop (V)";
+    btnRec.textContent = "Stop (V)";
   } else {
     mediaRecorder.stop();
     isRecording = false;
     btnRec.classList.remove("active");
-    btnRec.textContent = "⏺ Record (V)";
+    btnRec.textContent = "Record (V)";
   }
 }
 
