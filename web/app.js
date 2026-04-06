@@ -2,7 +2,7 @@ import {
   FaceLandmarker,
   HandLandmarker,
   FilesetResolver,
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm";
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
@@ -95,7 +95,6 @@ let filters = [];
 let currentFilter = 0;
 let faceLandmarker = null;
 let handLandmarker = null;
-let lastVideoTime  = -1;
 let faceResult     = null;
 let handResult     = null;
 
@@ -147,7 +146,13 @@ async function init() {
   statusEl.textContent = "Starting camera...";
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
-  await new Promise((r) => (video.onloadedmetadata = r));
+  await video.play();
+
+  // Wait until we have real frame dimensions
+  await new Promise((r) => {
+    const check = () => (video.videoWidth > 0 ? r() : requestAnimationFrame(check));
+    check();
+  });
 
   canvas.width  = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -160,61 +165,66 @@ async function init() {
 // ── Main loop ────────────────────────────────────────────────────────────────
 
 function loop() {
-  const now = performance.now();
+  try {
+    const now = performance.now();
 
-  if (video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
     faceResult = faceLandmarker.detectForVideo(video, now);
     handResult = handLandmarker.detectForVideo(video, now);
-  }
 
-  const w = canvas.width;
-  const h = canvas.height;
+    const w = canvas.width;
+    const h = canvas.height;
 
-  // Draw mirrored video
-  ctx.save();
-  ctx.scale(-1, 1);
-  ctx.translate(-w, 0);
-  ctx.drawImage(video, 0, 0, w, h);
-  ctx.restore();
+    // Draw mirrored video
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
 
-  // Apply face filters
-  if (faceResult?.landmarks?.length) {
-    for (const faceLandmarks of faceResult.landmarks) {
-      const f    = filters[currentFilter];
-      const fn   = PLACE[f.placement];
-      if (fn) fn(faceLandmarks, f.image, w, h);
-    }
-  }
+    // Debug: show face count live
+    const faceCount = faceResult?.faceLandmarks?.length ?? 0;
+    statusEl.textContent = `faces: ${faceCount} | filter: ${filters[currentFilter]?.name} | img: ${filters[currentFilter]?.image ? "ok" : "null"}`;
 
-  // Hand swipe
-  if (handResult?.landmarks?.length) {
-    const wristX = handResult.landmarks[0][0].x; // normalised, non-mirrored
-    if (prevWristX !== null && now - lastSwipeTime > SWIPE_COOLDOWN) {
-      const diff = wristX - prevWristX;
-      if (diff > 0.1) {
-        // hand moved right in video → left on mirrored display → prev filter
-        currentFilter = (currentFilter - 1 + filters.length) % filters.length;
-        lastSwipeTime = now;
-        updateFilterLabel();
-      } else if (diff < -0.1) {
-        currentFilter = (currentFilter + 1) % filters.length;
-        lastSwipeTime = now;
-        updateFilterLabel();
+    // Apply face filters
+    if (faceCount > 0) {
+      for (const faceLandmarks of faceResult.faceLandmarks) {
+        const f  = filters[currentFilter];
+        const fn = PLACE[f.placement];
+        if (fn) fn(faceLandmarks, f.image, w, h);
       }
     }
-    prevWristX = wristX;
-  }
 
-  // REC indicator
-  if (isRecording) {
-    ctx.fillStyle = "red";
-    ctx.beginPath();
-    ctx.arc(w - 30, 30, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "white";
-    ctx.font = "bold 16px sans-serif";
-    ctx.fillText("REC", w - 70, 36);
+    // Hand swipe
+    if (handResult?.landmarks?.length) {
+      const wristX = handResult.landmarks[0][0].x;
+      if (prevWristX !== null && now - lastSwipeTime > SWIPE_COOLDOWN) {
+        const diff = wristX - prevWristX;
+        if (diff > 0.1) {
+          currentFilter = (currentFilter - 1 + filters.length) % filters.length;
+          lastSwipeTime = now;
+          updateFilterLabel();
+        } else if (diff < -0.1) {
+          currentFilter = (currentFilter + 1) % filters.length;
+          lastSwipeTime = now;
+          updateFilterLabel();
+        }
+      }
+      prevWristX = wristX;
+    }
+
+    // REC indicator
+    if (isRecording) {
+      ctx.fillStyle = "red";
+      ctx.beginPath();
+      ctx.arc(w - 30, 30, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "white";
+      ctx.font = "bold 16px sans-serif";
+      ctx.fillText("REC", w - 70, 36);
+    }
+  } catch (e) {
+    statusEl.textContent = "Loop error: " + e.message;
+    console.error("Loop error:", e);
   }
 
   requestAnimationFrame(loop);
