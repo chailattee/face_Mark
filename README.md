@@ -1,12 +1,13 @@
 # face filter app
-skills: openCV, mediapipe hand and face detection
+skills: OpenCV, mediapipe hand and face detection
+
+notes: didn't end up using OpenCV due to deployment being JS, but the .py filter also works
 
 # instructions: 
-1. download zip from releases file
-2. extract the ZIP file
+1. open [https://chailattee.github.io/face_Mark/](https://chailattee.github.io/face_Mark/)
 
 
 # controls
 swipe hand in front of camera to change filter
 space to take photo
-esc to exit
+V to start/stop video

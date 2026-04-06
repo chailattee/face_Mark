@@ -1,6 +1,0 @@
-av>=16,<17
-numpy>=2.2,<3
-opencv-python>=4.13,<5
-mediapipe==0.10.9
-streamlit>=1.55,<2
-streamlit-webrtc>=0.64,<0.65
